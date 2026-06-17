@@ -8,6 +8,11 @@ import type { Slide, SlidePresentation } from '../types/slide';
 
 type ThemeMode = 'dark' | 'light';
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
+
 type HymnSuggestion = {
   number: string;
   title: string;
@@ -312,12 +317,24 @@ function LayoutToggle({
   );
 }
 
+function InstallAppIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 fill-current">
+      <path d="M10 1a1 1 0 0 1 1 1v7.59l2.3-2.3a1 1 0 1 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 1.4-1.42L9 9.59V2a1 1 0 0 1 1-1Zm-7 12a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2a1 1 0 1 1 2 0v2a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3v-2a1 1 0 0 1 1-1Z" />
+    </svg>
+  );
+}
+
 export default function App() {
   const [hymnNumberInput, setHymnNumberInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredSuggestions, setFilteredSuggestions] = useState<HymnSuggestion[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [linesPerSlide, setLinesPerSlide] = useState(1);
+  const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(
+    null,
+  );
+  const [showInstallButton, setShowInstallButton] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>('dark');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -343,7 +360,37 @@ export default function App() {
     exportButton: isDark
       ? 'border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800'
       : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+    installButton: isDark
+      ? 'border-cyan-400/30 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20'
+      : 'border-cyan-600/20 bg-cyan-50 text-cyan-900 hover:bg-cyan-100',
   };
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const installEvent = event as BeforeInstallPromptEvent;
+      installEvent.preventDefault();
+      setInstallPromptEvent(installEvent);
+      setShowInstallButton(true);
+    };
+
+    const installedHandler = () => {
+      setShowInstallButton(false);
+      setInstallPromptEvent(null);
+    };
+
+    window.addEventListener('beforeinstallprompt', handler);
+    window.addEventListener('appinstalled', installedHandler);
+
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setShowInstallButton(false);
+      setInstallPromptEvent(null);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('appinstalled', installedHandler);
+    };
+  }, []);
 
   useEffect(() => {
     if (skipSearchSyncRef.current) {
@@ -550,6 +597,21 @@ export default function App() {
     }
   }
 
+  async function handleInstallClick() {
+    if (!installPromptEvent) {
+      return;
+    }
+
+    await installPromptEvent.prompt();
+    const choiceResult = await installPromptEvent.userChoice;
+
+    if (choiceResult.outcome === 'accepted') {
+      setShowInstallButton(false);
+    }
+
+    setInstallPromptEvent(null);
+  }
+
   function handleGoLiveClick(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
 
@@ -616,6 +678,18 @@ export default function App() {
                   onChange={setLinesPerSlide}
                   isDark={isDark}
                 />
+                {showInstallButton ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleInstallClick();
+                    }}
+                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition ${themeStyles.installButton}`}
+                  >
+                    <InstallAppIcon />
+                    Install Desktop App
+                  </button>
+                ) : null}
                 <ThemeToggle theme={theme} onChange={setTheme} />
               </div>
             </div>
