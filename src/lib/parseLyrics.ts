@@ -42,6 +42,15 @@ function createSlide(id: string, kind: SlideKind, title: string, line: string): 
   };
 }
 
+function createSlideFromLines(id: string, kind: SlideKind, title: string, lines: string[]): Slide {
+  return {
+    id,
+    kind,
+    title,
+    lines,
+  };
+}
+
 function sectionTitle(kind: SlideKind, count: number): string {
   if (kind === 'chorus') {
     return `Chorus ${count}`;
@@ -58,14 +67,15 @@ function sectionTitle(kind: SlideKind, count: number): string {
   return `Section ${count}`;
 }
 
-export function parseLyricsToSlideModel(lyrics: string): SlideModel {
+type CleanLine = {
+  text: string;
+  kind: SlideKind;
+};
+
+function collectCleanLines(lyrics: string): CleanLine[] {
   const rows = normalizeLyrics(lyrics);
-  const slides: Slide[] = [];
   let currentKind: SlideKind = 'verse';
-  let verseCount = 0;
-  let chorusCount = 0;
-  let bridgeCount = 0;
-  let otherCount = 0;
+  const cleanLines: CleanLine[] = [];
 
   for (const rawLine of rows) {
     const trimmed = rawLine.trim();
@@ -81,31 +91,60 @@ export function parseLyricsToSlideModel(lyrics: string): SlideModel {
       continue;
     }
 
-    if (currentKind === 'chorus') {
+    cleanLines.push({ text: trimmed, kind: currentKind });
+  }
+
+  return cleanLines;
+}
+
+function groupCleanLines(cleanLines: CleanLine[], linesPerSlide: number): CleanLine[][] {
+  const effectiveLinesPerSlide = linesPerSlide === 2 ? 2 : 1;
+  const groups: CleanLine[][] = [];
+
+  for (let index = 0; index < cleanLines.length; index += effectiveLinesPerSlide) {
+    groups.push(cleanLines.slice(index, index + effectiveLinesPerSlide));
+  }
+
+  return groups;
+}
+
+export function parseLyricsToSlideModel(lyrics: string, linesPerSlide = 1): SlideModel {
+  const cleanLines = collectCleanLines(lyrics);
+  const groupedLines = groupCleanLines(cleanLines, linesPerSlide);
+  const slides: Slide[] = [];
+  let verseCount = 0;
+  let chorusCount = 0;
+  let bridgeCount = 0;
+  let otherCount = 0;
+
+  for (const group of groupedLines) {
+    const primaryKind = group[0]?.kind ?? 'other';
+
+    if (primaryKind === 'chorus') {
       chorusCount += 1;
-    } else if (currentKind === 'bridge') {
+    } else if (primaryKind === 'bridge') {
       bridgeCount += 1;
-    } else if (currentKind === 'verse') {
+    } else if (primaryKind === 'verse') {
       verseCount += 1;
     } else {
       otherCount += 1;
     }
 
     const ordinal =
-      currentKind === 'chorus'
+      primaryKind === 'chorus'
         ? chorusCount
-        : currentKind === 'bridge'
+        : primaryKind === 'bridge'
           ? bridgeCount
-          : currentKind === 'verse'
+          : primaryKind === 'verse'
             ? verseCount
             : otherCount;
 
     slides.push(
-      createSlide(
+      createSlideFromLines(
         `slide-${slides.length + 1}`,
-        currentKind,
-        sectionTitle(currentKind, ordinal),
-        trimmed,
+        primaryKind,
+        sectionTitle(primaryKind, ordinal),
+        group.map((line) => line.text),
       ),
     );
   }

@@ -44,11 +44,8 @@ function getSlideLabel(kind: SlideKind, index: number): 'Title' | 'Verse' | 'Cho
   return 'Verse';
 }
 
-function getBodyFontSize(lineCount: number): number {
-  if (lineCount >= 8) return 26;
-  if (lineCount >= 6) return 28;
-  if (lineCount >= 4) return 30;
-  return 34;
+function getBodyFontSize(slideText: string): number {
+  return slideText.includes('\n') ? 38 : 44;
 }
 
 export async function exportPresentationToPptx(
@@ -112,13 +109,15 @@ export async function exportPresentationToPptx(
       margin: 0,
     });
 
-    slide.addText(slideModel.lines.length > 0 ? slideModel.lines.join('\n') : 'No lyric lines available.', {
+    const slideText = slideModel.lines.length > 0 ? slideModel.lines.join('\n') : 'No lyric lines available.';
+
+    slide.addText(slideText, {
       x: '6%',
       y: '20%',
       w: '88%',
       h: '58%',
       fontFace: 'Aptos',
-      fontSize: getBodyFontSize(slideModel.lines.length),
+      fontSize: getBodyFontSize(slideText),
       bold: isTitle,
       italic: isChorus,
       color: isChorus ? palette.chorusAccent : textColor,

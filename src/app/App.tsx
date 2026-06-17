@@ -1,11 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AppProviders from './providers/AppProviders';
 import { generateHymnSlides } from '../workflows/generateHymnSlides';
 import { exportPresentationToPptx } from '../services/pptxExport';
+import hymnsDatabase from '../data/hymns.json';
 import type { ApiResult } from '../types/api';
 import type { Slide, SlidePresentation } from '../types/slide';
 
 type ThemeMode = 'dark' | 'light';
+
+type HymnSuggestion = {
+  number: string;
+  title: string;
+};
+
+const hymnsList = Object.values(hymnsDatabase.hymns) as HymnSuggestion[];
 
 function isValidHymnNumber(value: string): boolean {
   if (!value.trim()) {
@@ -270,8 +278,46 @@ function ThemeToggle({
   );
 }
 
+function LayoutToggle({
+  linesPerSlide,
+  onChange,
+  isDark,
+}: {
+  linesPerSlide: number;
+  onChange: (value: number) => void;
+  isDark: boolean;
+}) {
+  const shellClass = isDark ? 'bg-slate-900 text-slate-300' : 'bg-slate-100 text-slate-600';
+  const activeClass = isDark ? 'bg-slate-700 text-white shadow-sm' : 'bg-white text-slate-900 shadow-sm';
+
+  return (
+    <div className={`inline-flex rounded-full p-1 text-sm font-medium ${shellClass}`}>
+      <button
+        type="button"
+        onClick={() => onChange(1)}
+        aria-pressed={linesPerSlide === 1}
+        className={`rounded-full px-3 py-1 transition ${linesPerSlide === 1 ? activeClass : ''}`}
+      >
+        1 Line
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange(2)}
+        aria-pressed={linesPerSlide === 2}
+        className={`rounded-full px-3 py-1 transition ${linesPerSlide === 2 ? activeClass : ''}`}
+      >
+        2 Lines
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   const [hymnNumberInput, setHymnNumberInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredSuggestions, setFilteredSuggestions] = useState<HymnSuggestion[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [linesPerSlide, setLinesPerSlide] = useState(1);
   const [theme, setTheme] = useState<ThemeMode>('dark');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -279,29 +325,47 @@ export default function App() {
   const [activeSlideIndex, setActiveSlideIndex] = useState<number | null>(null);
 
   const projectorWindowRef = useRef<Window | null>(null);
+  const skipSearchSyncRef = useRef(false);
 
   const slides = workflowResult?.ok ? workflowResult.data.slides : [];
   const hymnNumber = workflowResult?.ok ? workflowResult.data.hymnNumber : null;
   const hymnTitle = workflowResult?.ok ? workflowResult.data.title : '';
   const hasSuccess = Boolean(workflowResult?.ok);
+  const isDark = theme === 'dark';
+  const themeStyles = {
+    appBg: isDark ? 'bg-[#0A0F1E]' : 'bg-[#F8FAFC]',
+    cardBg: isDark ? 'bg-[#1E293B]' : 'bg-[#FFFFFF]',
+    textMain: isDark ? 'text-white' : 'text-slate-900',
+    textMuted: isDark ? 'text-slate-400' : 'text-slate-500',
+    inputBg: isDark
+      ? 'bg-[#0A0F1E] text-white border-slate-700'
+      : 'bg-white text-slate-900 border-slate-200',
+    exportButton: isDark
+      ? 'border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800'
+      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+  };
 
-  const currentThemeClasses = useMemo(() => {
-    if (theme === 'dark') {
-      return {
-        shell: 'bg-slate-950 text-slate-100',
-        muted: 'text-slate-300',
-        input: 'border-slate-700 bg-slate-950 text-slate-100 placeholder:text-slate-500',
-        exportButton: 'border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800',
-      };
+  useEffect(() => {
+    if (skipSearchSyncRef.current) {
+      skipSearchSyncRef.current = false;
+      return;
     }
 
-    return {
-      shell: 'bg-projection-light text-slate-900',
-      muted: 'text-slate-500',
-      input: 'border-slate-200 bg-white text-slate-900 placeholder:text-slate-400',
-      exportButton: 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
-    };
-  }, [theme]);
+    const query = searchQuery.trim().toLowerCase();
+
+    if (!query) {
+      setFilteredSuggestions([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    const matches = hymnsList
+      .filter((hymn) => hymn.title.toLowerCase().includes(query))
+      .slice(0, 20);
+
+    setFilteredSuggestions(matches);
+    setShowDropdown(matches.length > 0);
+  }, [searchQuery]);
 
   useEffect(() => {
     if (!hasSuccess) {
@@ -322,6 +386,15 @@ export default function App() {
       setActiveSlideIndex(0);
     }
   }, [activeSlideIndex, hasSuccess, slides.length]);
+
+  useEffect(() => {
+    if (!workflowResult?.ok || loading) {
+      return;
+    }
+
+    const currentHymnNumber = workflowResult.data.hymnNumber;
+    void runGenerate(String(currentHymnNumber), linesPerSlide);
+  }, [linesPerSlide]);
 
   useEffect(() => {
     const handleProjectionMessage = (event: MessageEvent) => {
@@ -367,13 +440,14 @@ export default function App() {
     }
 
     const activeSlide = activeSlideIndex !== null ? slides[activeSlideIndex] : null;
+    const activeSlideText = activeSlide?.lines.join('\n') ?? '';
 
     updateProjectorWindow(
       win,
       theme,
       hymnTitle,
       hymnNumber,
-      activeSlide?.lines[0] ?? '',
+      activeSlideText,
       activeSlide?.kind === 'chorus',
     );
   }, [activeSlideIndex, hymnNumber, hymnTitle, slides, theme, workflowResult]);
@@ -416,8 +490,8 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [slides.length]);
 
-  async function handleGenerateClick() {
-    if (!isValidHymnNumber(hymnNumberInput)) {
+  async function runGenerate(hymnNumberValue: string, layoutLinesPerSlide = linesPerSlide) {
+    if (!isValidHymnNumber(hymnNumberValue)) {
       setErrorMessage('Please enter a valid hymn number.');
       setWorkflowResult(null);
       setActiveSlideIndex(null);
@@ -426,9 +500,10 @@ export default function App() {
 
     setLoading(true);
     setErrorMessage('');
+    setShowDropdown(false);
 
     try {
-      const result = await generateHymnSlides(Number(hymnNumberInput));
+      const result = await generateHymnSlides(Number(hymnNumberValue), layoutLinesPerSlide);
       console.log('generateHymnSlides result:', result);
       setWorkflowResult(result);
 
@@ -446,6 +521,19 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleGenerateClick() {
+    await runGenerate(hymnNumberInput);
+  }
+
+  async function handleSuggestionSelect(song: HymnSuggestion) {
+    skipSearchSyncRef.current = true;
+    setHymnNumberInput(song.number);
+    setSearchQuery(song.title);
+    setFilteredSuggestions([]);
+    setShowDropdown(false);
+    await runGenerate(song.number);
   }
 
   async function handleExportClick() {
@@ -466,6 +554,7 @@ export default function App() {
     event.preventDefault();
 
     const activeSlide = activeSlideIndex !== null ? slides[activeSlideIndex] : null;
+    const activeSlideText = activeSlide?.lines.join('\n') ?? '';
 
     if (projectorWindowRef.current && !projectorWindowRef.current.closed) {
       projectorWindowRef.current.focus();
@@ -474,7 +563,7 @@ export default function App() {
         theme,
         hymnTitle,
         hymnNumber,
-        activeSlide?.lines[0] ?? '',
+        activeSlideText,
         activeSlide?.kind === 'chorus',
       );
       return;
@@ -502,41 +591,93 @@ export default function App() {
       theme,
       hymnTitle,
       hymnNumber,
-      activeSlide?.lines[0] ?? '',
+      activeSlideText,
       activeSlide?.kind === 'chorus',
     );
   }
 
   return (
     <AppProviders>
-      <main className={`min-h-screen ${currentThemeClasses.shell}`}>
+      <main className={`min-h-screen ${themeStyles.appBg} ${themeStyles.textMain}`}>
         <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 p-6 lg:p-8">
-          <header className="rounded-3xl bg-white p-6 shadow-soft">
+          <header className={`rounded-3xl p-6 shadow-soft ${themeStyles.cardBg}`}>
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-sm font-medium uppercase tracking-[0.24em] text-slate-500">
+                <p className={`text-sm font-medium uppercase tracking-[0.24em] ${themeStyles.textMuted}`}>
                   GHS Auto-Presenter Slide Generator
                 </p>
-                <h1 className="mt-2 text-3xl font-semibold tracking-tight">Slide Generator</h1>
+                <h1 className={`mt-2 text-3xl font-semibold tracking-tight ${themeStyles.textMain}`}>
+                  Slide Generator
+                </h1>
               </div>
-              <ThemeToggle theme={theme} onChange={setTheme} />
+              <div className="flex flex-wrap items-center gap-3">
+                <LayoutToggle
+                  linesPerSlide={linesPerSlide}
+                  onChange={setLinesPerSlide}
+                  isDark={isDark}
+                />
+                <ThemeToggle theme={theme} onChange={setTheme} />
+              </div>
             </div>
           </header>
 
           <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-            <section className="rounded-3xl bg-white p-6 shadow-soft">
+            <section className={`rounded-3xl p-6 shadow-soft ${themeStyles.cardBg}`}>
               <div className="space-y-4">
                 <div>
-                  <h2 className="text-xl font-semibold">Hymn Lookup</h2>
-                  <p className={`mt-1 text-sm ${currentThemeClasses.muted}`}>
+                  <h2 className={`text-xl font-semibold ${themeStyles.textMain}`}>
+                    Hymn Lookup
+                  </h2>
+                  <p className={`mt-1 text-sm ${themeStyles.textMuted}`}>
                     Enter a hymn number to fetch lyrics and prepare slides.
                   </p>
                 </div>
 
                 <div className="space-y-3">
-                  <label className="block text-sm font-medium text-slate-700" htmlFor="hymn-number">
-                    Hymn Number
-                  </label>
+                  <div className={`relative ${showDropdown && filteredSuggestions.length > 0 ? 'pb-64' : ''}`}>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="song-title-search">
+                      Search by Song Title
+                    </label>
+                    <input
+                      id="song-title-search"
+                      type="text"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      onFocus={() => {
+                        if (searchQuery.trim()) {
+                          setShowDropdown(filteredSuggestions.length > 0);
+                        }
+                      }}
+                      placeholder="Type a song title"
+                      className={`mt-1 w-full rounded-xl border px-4 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400 ${themeStyles.inputBg}`}
+                    />
+
+                    {showDropdown && filteredSuggestions.length > 0 ? (
+                      <div
+                        className={`absolute z-50 mt-2 max-h-60 w-full overflow-y-auto rounded-md border shadow-lg ${themeStyles.cardBg} ${isDark ? 'border-slate-700' : 'border-slate-200'}`}
+                      >
+                        {filteredSuggestions.map((song) => (
+                          <button
+                            key={song.number}
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              void handleSuggestionSelect(song);
+                            }}
+                            className={`block w-full border-b px-4 py-3 text-left text-sm transition last:border-b-0 ${isDark ? 'border-slate-700 hover:bg-slate-900' : 'border-slate-100 hover:bg-slate-50'} ${themeStyles.textMain}`}
+                          >
+                            GHS {song.number} - {song.title}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300" htmlFor="hymn-number">
+                      Hymn Number
+                    </label>
+                  </div>
                   <input
                     id="hymn-number"
                     type="number"
@@ -545,7 +686,7 @@ export default function App() {
                     value={hymnNumberInput}
                     onChange={(event) => setHymnNumberInput(event.target.value)}
                     placeholder="Enter Hymn Number"
-                    className={`w-full rounded-xl border px-4 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400 ${currentThemeClasses.input}`}
+                    className={`w-full rounded-xl border px-4 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400 ${themeStyles.inputBg}`}
                   />
                   <button
                     type="button"
@@ -569,7 +710,7 @@ export default function App() {
                       type="button"
                       onClick={handleExportClick}
                       disabled={!hasSuccess || slides.length === 0}
-                      className={`inline-flex items-center justify-center rounded-xl border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${currentThemeClasses.exportButton}`}
+                      className={`inline-flex items-center justify-center rounded-xl border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${themeStyles.exportButton}`}
                     >
                       Generate PowerPoint
                     </button>
@@ -596,11 +737,11 @@ export default function App() {
               </div>
             </section>
 
-            <section className="rounded-3xl bg-slate-950 p-6 text-white shadow-soft">
+            <section className={`rounded-3xl p-6 shadow-soft ${themeStyles.cardBg} ${themeStyles.textMain}`}>
               <div className="space-y-4">
                 <div>
-                  <h2 className="text-xl font-semibold">Preview</h2>
-                  <p className="mt-1 text-sm text-slate-300">
+                  <h2 className={`text-xl font-semibold ${themeStyles.textMain}`}>Preview</h2>
+                  <p className={`mt-1 text-sm ${themeStyles.textMuted}`}>
                     Slide rendering will appear here after hymn parsing.
                   </p>
                 </div>
@@ -618,52 +759,18 @@ export default function App() {
                       />
                     ))
                   ) : (
-                    <div className="flex min-h-80 items-center justify-center rounded-3xl border border-white/10 bg-white/5 p-6 text-center text-slate-300">
+                    <div className={`flex min-h-80 items-center justify-center rounded-3xl border p-6 text-center ${isDark ? 'border-slate-700 bg-slate-900 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
                       Slide preview placeholder
                     </div>
                   )}
                 </div>
-
-                <details className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200">
-                  <summary className="cursor-pointer select-none font-medium text-white">
-                    Debug
-                  </summary>
-
-                  <div className="mt-4 space-y-3">
-                    <div className="grid gap-1">
-                      <div>
-                        <span className="font-semibold text-white">Hymn Title:</span>{' '}
-                        {workflowResult?.ok ? workflowResult.data.title : 'N/A'}
-                      </div>
-                      <div>
-                        <span className="font-semibold text-white">Hymn Number:</span>{' '}
-                        {workflowResult?.ok ? workflowResult.data.hymnNumber : 'N/A'}
-                      </div>
-                      <div>
-                        <span className="font-semibold text-white">Total Slide Count:</span>{' '}
-                        {workflowResult?.ok ? workflowResult.data.slides.length : 0}
-                      </div>
-                    </div>
-
-                    <pre className="max-h-72 overflow-auto rounded-xl border border-white/10 bg-slate-950 p-3 text-xs leading-5 text-slate-100">
-                      {workflowResult
-                        ? JSON.stringify(workflowResult, null, 2)
-                        : 'No workflow result yet.'}
-                    </pre>
-                  </div>
-                </details>
               </div>
             </section>
           </div>
 
-          <section className="rounded-3xl bg-white p-6 shadow-soft">
-            <div className="flex flex-col gap-2">
-              <h2 className="text-xl font-semibold">Export</h2>
-              <p className="text-sm text-slate-500">
-                PPT generation is ready. Use the controls above after loading a hymn.
-              </p>
-            </div>
-          </section>
+          <footer className="mt-16 pb-8 text-center text-sm text-slate-500">
+            © 2026 GHS Slide Generator • Built by Farin
+          </footer>
         </div>
       </main>
     </AppProviders>

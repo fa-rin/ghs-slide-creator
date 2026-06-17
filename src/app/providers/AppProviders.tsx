@@ -11,7 +11,7 @@ export default function AppProviders({ children }: AppProvidersProps) {
       return;
     }
 
-    void generateHymnSlides(1).then((result) => {
+    void generateHymnSlides(1, 1).then((result) => {
       console.log('Temporary hymn pipeline test result:', result);
     });
   }, []);

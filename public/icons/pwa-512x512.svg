@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="GHS Slides icon">
+  <rect width="512" height="512" rx="104" fill="#0A0F1E"/>
+  <rect x="72" y="72" width="368" height="368" rx="80" fill="#1E293B" stroke="#334155" stroke-width="10"/>
+  <text x="256" y="245" fill="#F8FAFC" font-family="Arial, Helvetica, sans-serif" font-size="132" font-weight="700" text-anchor="middle">GHS</text>
+  <text x="256" y="330" fill="#CBD5E1" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="600" text-anchor="middle">Slides</text>
+</svg>

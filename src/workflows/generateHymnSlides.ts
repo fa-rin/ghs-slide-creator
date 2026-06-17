@@ -6,6 +6,7 @@ import { parseLyricsToSlideModel } from '../lib/parseLyrics';
 
 export async function generateHymnSlides(
   hymnNumber: number,
+  linesPerSlide = 1,
 ): Promise<ApiResult<SlidePresentation>> {
   const hymnResult = await fetchHymnByNumber(hymnNumber);
 
@@ -14,7 +15,7 @@ export async function generateHymnSlides(
   }
 
   const hymn: Hymn = hymnResult.data;
-  const slideModel = parseLyricsToSlideModel(hymn.lyrics);
+  const slideModel = parseLyricsToSlideModel(hymn.lyrics, linesPerSlide);
 
   return {
     ok: true,
