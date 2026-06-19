@@ -27,7 +27,7 @@ export default defineConfig({
     emitHymnDatabaseAsset(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['/public/icons/pwa-192x192.svg', '/public/icons/pwa-512x512.svg', ],
+      includeAssets: ['icons/pwa-192x192.svg', 'icons/pwa-512x512.svg', ],
       workbox: {
         globPatterns: ['**/*.{html,js,css,json,svg}'],
       },
@@ -40,12 +40,13 @@ export default defineConfig({
         display: 'standalone',
         icons: [
           {
-            src: '/public/icons/pwa-192x192.svg',
+            // Must be the URL in the built app. In Vite/Web context, assets in /public are served from root (/icons/...)
+            src: '/icons/pwa-192x192.svg',
             sizes: '192x192',
             type: 'image/svg+xml',
           },
           {
-            src: '/public/icons/pwa-512x512.svg',
+            src: '/icons/pwa-512x512.svg',
             sizes: '512x512',
             type: 'image/svg+xml',
           },
